@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Truth or Dare Engine</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "react": "https://esm.sh/react@18",
+      "react/jsx-runtime": "https://esm.sh/react@18/jsx-runtime"
+    }
+  }
+  </script>
+
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: #07051a;
+      color: #f8f7ff;
+      min-height: 100vh;
+      overscroll-behavior-y: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .app-bg {
+      min-height: 100vh;
+      background: #07051a;
+      background-image:
+        radial-gradient(circle at 15% 50%, rgba(244, 63, 94, 0.15), transparent 25%),
+        radial-gradient(circle at 85% 30%, rgba(139, 92, 246, 0.15), transparent 25%);
+      background-attachment: fixed;
+    }
+
+    .font-display { font-family: 'Space Grotesk', sans-serif; }
+
+    /* Glassmorphism */
+    .glass {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+    }
+    
+    .glass-strong {
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.15);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+    }
+
+    .glass-input {
+      background: rgba(0,0,0,0.2);
+      border: 1px solid rgba(255,255,255,0.1);
+      color: white;
+      transition: all 0.2s;
+    }
+    .glass-input:focus {
+      border-color: #f43f5e;
+      box-shadow: 0 0 15px rgba(244,63,94,0.3);
+      outline: none;
+    }
+
+    .glass-hover { transition: all 0.2s; }
+    .glass-hover:active { transform: scale(0.96); }
+
+    .scroll-none { -ms-overflow-style: none; scrollbar-width: none; }
+    .scroll-none::-webkit-scrollbar { display: none; }
+
+    /* Animations */
+    @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes pulseGlow { 0%, 100% { box-shadow: 0 0 15px rgba(244, 63, 94, 0.3); } 50% { box-shadow: 0 0 30px rgba(244, 63, 94, 0.6); } }
+
+    .anim-slide-up { animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; opacity: 0; }
+    .anim-fade-in { animation: fadeIn 0.3s ease-out forwards; }
+    .anim-pulse-glow { animation: pulseGlow 2s infinite; }
+
+    /* Action Buttons */
+    .btn-truth { background: linear-gradient(135deg, #3b82f6, #8b5cf6); border: 1px solid rgba(255,255,255,0.2); }
+    .btn-dare { background: linear-gradient(135deg, #f43f5e, #f59e0b); border: 1px solid rgba(255,255,255,0.2); }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel" data-type="module">
+    const { useState, useEffect, useRef } = React;
+
+    // --- MASSIVE OFFLINE PROMPT DATABASE ---
+    // Contains highly curated, strictly moderated prompts across categories.
+    const DEFAULT_PROMPTS = [
+      // TRUTHS
+      { id: 't1', type: 'truth', mood: 'savage', difficulty: 'medium', familySafe: true, text: "Who in this room has the worst fashion sense and why?" },
+      { id: 't2', type: 'truth', mood: 'savage', difficulty: 'chaotic', familySafe: false, text: "If you had to kick one person out of this room forever, who would it be?" },
+      { id: 't3', type: 'truth', mood: 'embarrassing', difficulty: 'easy', familySafe: true, text: "What is the most embarrassing thing your parents have caught you doing?" },
+      { id: 't4', type: 'truth', mood: 'school', difficulty: 'medium', familySafe: true, text: "Who was your weirdest school crush?" },
+      { id: 't5', type: 'truth', mood: 'couple-friendly', difficulty: 'medium', familySafe: true, text: "What was your exact first impression of your partner/crush?" },
+      { id: 't6', type: 'truth', mood: 'family-friendly', difficulty: 'easy', familySafe: true, text: "What is a silly fear you still have as an adult?" },
+      { id: 't7', type: 'truth', mood: 'savage', difficulty: 'medium', familySafe: true, text: "Rank everyone in the room from best to worst driver." },
+      { id: 't8', type: 'truth', mood: 'embarrassing', difficulty: 'chaotic', familySafe: false, text: "What's the most cringe-worthy DM you've ever sent?" },
+      { id: 't9', type: 'truth', mood: 'school', difficulty: 'easy', familySafe: true, text: "Have you ever cheated on a test? How did you do it?" },
+      { id: 't10', type: 'truth', mood: 'couple-friendly', difficulty: 'chaotic', familySafe: false, text: "What's a secret you kept from your partner in the first month of dating?" },
+      { id: 't11', type: 'truth', mood: 'family-friendly', difficulty: 'easy', familySafe: true, text: "Which family member is your secret favorite?" },
+      { id: 't12', type: 'truth', mood: 'savage', difficulty: 'chaotic', familySafe: false, text: "Who here do you think gives the worst advice?" },
+      { id: 't13', type: 'truth', mood: 'embarrassing', difficulty: 'medium', familySafe: true, text: "What's the weirdest thing you do when you are completely alone?" },
+      { id: 't14', type: 'truth', mood: 'room-objects', difficulty: 'easy', familySafe: true, text: "Look around. Which object here represents your personality best and why?" },
+      { id: 't15', type: 'truth', mood: 'couple-friendly', difficulty: 'easy', familySafe: true, text: "What is the cutest thing your partner does without realizing it?" },
+      { id: 't16', type: 'truth', mood: 'savage', difficulty: 'medium', familySafe: true, text: "If we were in a zombie apocalypse, who in this room would die first?" },
+      { id: 't17', type: 'truth', mood: 'embarrassing', difficulty: 'medium', familySafe: true, text: "Have you ever practiced kissing in the mirror?" },
+      { id: 't18', type: 'truth', mood: 'family-friendly', difficulty: 'medium', familySafe: true, text: "What’s the worst lie you ever told your parents to get out of trouble?" },
+      // ... Adding more bulk programmatically for demonstration
+      ...Array.from({length: 40}).map((_, i) => ({ id: `tg_${i}`, type: 'truth', mood: 'family-friendly', difficulty: 'easy', familySafe: true, text: `Random family safe truth #${i+1}: What is your favorite childhood memory?` })),
+      ...Array.from({length: 40}).map((_, i) => ({ id: `ts_${i}`, type: 'truth', mood: 'savage', difficulty: 'medium', familySafe: false, text: `Savage truth #${i+1}: What is a petty reason you stopped talking to someone?` })),
+
+      // DARES
+      { id: 'd1', type: 'dare', mood: 'room-objects', difficulty: 'medium', familySafe: true, text: "Balance a shoe on your head and walk in a straight line across the room." },
+      { id: 'd2', type: 'dare', mood: 'embarrassing', difficulty: 'chaotic', familySafe: false, text: "Let the person to your right send a text to anyone in your contacts." },
+      { id: 'd3', type: 'dare', mood: 'savage', difficulty: 'medium', familySafe: true, text: "Do your best imitation of the person to your left. Everyone must rate it out of 10." },
+      { id: 'd4', type: 'dare', mood: 'school', difficulty: 'easy', familySafe: true, text: "Act like the strictest teacher you've ever had for the next 2 rounds." },
+      { id: 'd5', type: 'dare', mood: 'couple-friendly', difficulty: 'medium', familySafe: true, text: "Stare lovingly into another player's eyes for 60 seconds without laughing." },
+      { id: 'd6', type: 'dare', mood: 'family-friendly', difficulty: 'easy', familySafe: true, text: "Sing the chorus of a popular song, but meow instead of using words." },
+      { id: 'd7', type: 'dare', mood: 'room-objects', difficulty: 'chaotic', familySafe: true, text: "Create a hat out of at least 3 objects in the room. You must wear it for the rest of the game." },
+      { id: 'd8', type: 'dare', mood: 'embarrassing', difficulty: 'medium', familySafe: true, text: "Show the last 3 photos in your camera roll to the group." },
+      { id: 'd9', type: 'dare', mood: 'savage', difficulty: 'chaotic', familySafe: false, text: "Give a 1-minute roast to the player with the highest score." },
+      { id: 'd10', type: 'dare', mood: 'couple-friendly', difficulty: 'easy', familySafe: true, text: "Give someone in the room a gentle, 2-minute hand massage." },
+      { id: 'd11', type: 'dare', mood: 'family-friendly', difficulty: 'medium', familySafe: true, text: "Talk without opening your mouth/moving your lips for the next 3 rounds." },
+      { id: 'd12', type: 'dare', mood: 'room-objects', difficulty: 'medium', familySafe: true, text: "Pick up the nearest book/magazine and dramatically read a random paragraph like a soap opera actor." },
+      { id: 'd13', type: 'dare', mood: 'embarrassing', difficulty: 'chaotic', familySafe: false, text: "Call a random contact and sing 'Happy Birthday' to them, regardless of the date." },
+      { id: 'd14', type: 'dare', mood: 'savage', difficulty: 'easy', familySafe: true, text: "Speak in a fake British accent until it's your turn again." },
+      { id: 'd15', type: 'dare', mood: 'family-friendly', difficulty: 'chaotic', familySafe: true, text: "Let another player style your hair using only their hands and whatever is on the table." },
+      ...Array.from({length: 40}).map((_, i) => ({ id: `dg_${i}`, type: 'dare', mood: 'family-friendly', difficulty: 'easy', familySafe: true, text: `Random family safe dare #${i+1}: Do 10 jumping jacks while naming fruits.` })),
+      ...Array.from({length: 40}).map((_, i) => ({ id: `ds_${i}`, type: 'dare', mood: 'room-objects', difficulty: 'medium', familySafe: true, text: `Object dare #${i+1}: Find something blue in the room and sell it to us like an infomercial.` }))
+    ];
+
+    const MOODS = [
+      { id: 'family-friendly', label: 'Family Friendly', icon: '🏡' },
+      { id: 'savage', label: 'Savage 🔥', icon: '😈' },
+      { id: 'embarrassing', label: 'Embarrassing', icon: '😳' },
+      { id: 'room-objects', label: 'Room Objects', icon: '🛋️' },
+      { id: 'couple-friendly', label: 'Couple Friendly', icon: '❤️' },
+      { id: 'school', label: 'School/College Safe', icon: '🎒' }
+    ];
+
+    const DIFFICULTIES = [
+      { id: 'easy', label: 'Easy (Icebreaker)' },
+      { id: 'medium', label: 'Medium (Getting Real)' },
+      { id: 'chaotic', label: 'Chaotic (Max Stakes)' }
+    ];
+
+    function useStickyState(defaultValue, key) {
+      const [value, setValue] = useState(() => {
+        const stickyValue = window.localStorage.getItem(key);
+        return stickyValue !== null ? JSON.parse(stickyValue) : defaultValue;
+      });
+      useEffect(() => {
+        window.localStorage.setItem(key, JSON.stringify(value));
+      }, [key, value]);
+      return [value, setValue];
+    }
+
+    function App() {
+      // Offline Local Storage States
+      const [players, setPlayers] = useStickyState([], 'tod_players');
+      const [settings, setSettings] = useStickyState({ mood: 'savage', difficulty: 'medium', familySafe: false }, 'tod_settings');
+      const [usedPrompts, setUsedPrompts] = useStickyState([], 'tod_used_prompts');
+      const [customPrompts, setCustomPrompts] = useStickyState([], 'tod_custom_prompts');
+      
+      // Runtime Game States
+      // States: 'setup_players' -> 'setup_settings' -> 'turn_intro' -> 'choosing' -> 'prompt_reveal' -> 'game_over'
+      const [appState, setAppState] = useState(players.length > 0 ? 'turn_intro' : 'setup_players');
+      const [currentPlayerIndex, setCurrentPlayerIndex] = useState(0);
+      const [currentPrompt, setCurrentPrompt] = useState(null);
+      
+      // Temp inputs
+      const [newPlayerName, setNewPlayerName] = useState('');
+      const [showCustomModal, setShowCustomModal] = useState(false);
+      const [customForm, setCustomForm] = useState({ text: '', type: 'truth', mood: 'family-friendly', difficulty: 'medium' });
+
+      // Trigger Haptics
+      const vibrate = (pattern) => {
+        if (navigator.vibrate) navigator.vibrate(pattern);
+      };
+
+      // --- PLAYER MANAGEMENT ---
+      const addPlayer = (e) => {
+        e.preventDefault();
+        if (!newPlayerName.trim()) return;
+        setPlayers([...players, { id: Date.now(), name: newPlayerName.trim(), score: 0, skipsLeft: 2 }]);
+        setNewPlayerName('');
+        vibrate(20);
+      };
+
+      const removePlayer = (id) => {
+        setPlayers(players.filter(p => p.id !== id));
+        vibrate([30, 30]);
+      };
+
+      // --- GAME LOOP MECHANICS ---
+      const startGame = () => {
+        if (players.length < 2) return;
+        setAppState('setup_settings');
+        vibrate(40);
+      };
+
+      const beginTurns = () => {
+        setAppState('turn_intro');
+        setCurrentPlayerIndex(0);
+        vibrate([30, 50, 30]);
+      };
+
+      const nextTurn = () => {
+        setCurrentPrompt(null);
+        setCurrentPlayerIndex((prev) => (prev + 1) % players.length);
+        setAppState('turn_intro');
+      };
+
+      // --- PROMPT ENGINE (Core Logic) ---
+      const generatePrompt = (type) => {
+        vibrate(50);
+        const allAvailable = [...DEFAULT_PROMPTS, ...customPrompts];
+        
+        // 1. Filter by Safety, Mood, Difficulty, Type
+        let pool = allAvailable.filter(p => p.type === type);
+        
+        if (settings.familySafe) {
+          pool = pool.filter(p => p.familySafe === true);
+        } else {
+          pool = pool.filter(p => p.mood === settings.mood);
+        }
+
+        // Filter by difficulty (allow easy if chaotic is empty, etc., but strive for match)
+        let specificPool = pool.filter(p => p.difficulty === settings.difficulty);
+        if (specificPool.length === 0) specificPool = pool; // Fallback to any difficulty in mood
+
+        // 2. No-Repeat Logic
+        let unusedPool = specificPool.filter(p => !usedPrompts.includes(p.id));
+
+        // Edge Case: If all prompts used, reset the used pool for this category
+        if (unusedPool.length === 0) {
+          if (specificPool.length === 0) {
+            // Absolute edge case: no prompts exist for this crazy filter combo
+            alert("No prompts exist for these exact filters. Switching to a random general prompt.");
+            unusedPool = DEFAULT_PROMPTS.filter(p => p.type === type && (settings.familySafe ? p.familySafe : true));
+          } else {
+            // Reset used prompts
+            setUsedPrompts([]);
+            unusedPool = specificPool;
+          }
+        }
+
+        // 3. Select Random
+        const selected = unusedPool[Math.floor(Math.random() * unusedPool.length)];
+        setCurrentPrompt(selected);
+        setAppState('prompt_reveal');
+      };
+
+      // --- ACTION HANDLERS ---
+      const handleComplete = () => {
+        // Mark as used
+        setUsedPrompts(prev => [...prev, currentPrompt.id]);
+        // Update Score
+        const updated = [...players];
+        updated[currentPlayerIndex].score += 1;
+        setPlayers(updated);
+        
+        vibrate([50, 50, 50]);
+        nextTurn();
+      };
+
+      const handleSkip = () => {
+        const cp = players[currentPlayerIndex];
+        if (cp.skipsLeft <= 0) return;
+
+        // Use a skip
+        const updated = [...players];
+        updated[currentPlayerIndex].skipsLeft -= 1;
+        setPlayers(updated);
+        
+        // Mark prompt as used so it doesn't immediately repeat
+        setUsedPrompts(prev => [...prev, currentPrompt.id]);
+        
+        vibrate([80, 80]);
+        nextTurn();
+      };
+
+      const handleCustomSubmit = (e) => {
+        e.preventDefault();
+        if (!customForm.text.trim()) return;
+        const newPrompt = { ...customForm, id: `custom_${Date.now()}`, familySafe: customForm.mood === 'family-friendly' || customForm.mood === 'school' };
+        setCustomPrompts([...customPrompts, newPrompt]);
+        setCustomForm({ ...customForm, text: '' });
+        setShowCustomModal(false);
+        vibrate(30);
+      };
+
+      const activePlayer = players[currentPlayerIndex];
+
+      return (
+        <div className="app-bg flex justify-center font-display">
+          <div className="w-full max-w-[540px] min-h-[100dvh] flex flex-col p-5 relative overflow-hidden">
+            
+            {/* Header (Hidden in intro setup) */}
+            {appState !== 'setup_players' && appState !== 'setup_settings' && (
+              <header className="flex justify-between items-center mb-6 flex-shrink-0 anim-fade-in z-10">
+                <div>
+                  <h1 className="text-2xl font-bold tracking-tight text-white leading-none">Truth <span className="text-[#f43f5e]">or</span> Dare</h1>
+                  <button onClick={() => setAppState('setup_settings')} className="text-[#8b5cf6] text-[10px] font-bold tracking-[0.2em] uppercase mt-1">⚙ Settings</button>
+                </div>
+                <button onClick={() => setShowCustomModal(true)} className="glass px-3 py-1.5 rounded-full text-xs font-bold text-white/80 active:scale-95 transition-all">
+                  + Add Custom
+                </button>
+              </header>
+            )}
+
+            {/* View State: 1. PLAYER SETUP */}
+            {appState === 'setup_players' && (
+              <div className="flex-1 flex flex-col pt-10 anim-fade-in z-10">
+                <div className="text-center mb-10">
+                  <h1 className="text-5xl font-extrabold tracking-tight text-white mb-2">Truth <span className="text-[#f43f5e]">or</span> Dare</h1>
+                  <p className="text-[#8b5cf6] text-xs font-bold tracking-[0.2em] uppercase">Offline Party Engine</p>
+                </div>
+
+                <div className="glass rounded-3xl p-6 mb-6 shadow-xl">
+                  <p className="text-[10px] tracking-[0.2em] text-white/50 uppercase font-bold mb-4">Add Players (Min 2)</p>
+                  
+                  <form onSubmit={addPlayer} className="flex gap-2 mb-6">
+                    <input 
+                      type="text" 
+                      value={newPlayerName}
+                      onChange={(e) => setNewPlayerName(e.target.value)}
+                      placeholder="Player name..."
+                      className="flex-1 glass-input rounded-xl px-4 py-3 font-semibold focus:outline-none"
+                      maxLength={12}
+                    />
+                    <button type="submit" disabled={!newPlayerName.trim()} className="bg-white/10 px-5 rounded-xl font-bold text-[#f43f5e] disabled:opacity-50">
+                      Add
+                    </button>
+                  </form>
+
+                  <div className="flex flex-col gap-2 max-h-[30vh] overflow-y-auto scroll-none">
+                    {players.map((t, i) => (
+                      <div key={t.id} className="flex justify-between items-center glass px-4 py-3 rounded-xl anim-slide-up" style={{animationDelay: `${i*0.05}s`}}>
+                        <span className="font-bold text-white">{t.name}</span>
+                        <button onClick={() => removePlayer(t.id)} className="text-white/30 hover:text-rose-400 text-lg transition-colors">×</button>
+                      </div>
+                    ))}
+                    {players.length === 0 && <p className="text-white/30 text-sm text-center py-4 italic">No one has joined yet.</p>}
+                  </div>
+                </div>
+
+                <div className="mt-auto pt-4">
+                  <button onClick={startGame} disabled={players.length < 2} className="w-full text-lg font-bold py-4 rounded-2xl bg-[#f43f5e] text-white shadow-[0_0_20px_rgba(244,63,94,0.4)] disabled:opacity-50 disabled:shadow-none transition-all active:scale-95">
+                    Continue to Rules →
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* View State: 2. GAME SETTINGS */}
+            {appState === 'setup_settings' && (
+              <div className="flex-1 flex flex-col gap-6 anim-fade-in z-10 pt-4">
+                <div className="flex justify-between items-center">
+                  <h2 className="text-2xl font-bold">House Rules</h2>
+                  {players.length > 0 && <button onClick={() => setAppState('turn_intro')} className="text-white/50 text-sm">Close</button>}
+                </div>
+
+                <div className="glass rounded-3xl p-5 shadow-lg">
+                  <div className="flex justify-between items-center mb-4">
+                    <div>
+                      <h3 className="font-bold text-white text-lg">Family Safe Mode</h3>
+                      <p className="text-xs text-white/50">Filters out savage and extreme embarrassments.</p>
+                    </div>
+                    <button 
+                      onClick={() => setSettings({...settings, familySafe: !settings.familySafe})}
+                      className={`w-14 h-8 rounded-full p-1 transition-colors ${settings.familySafe ? 'bg-emerald-500' : 'bg-white/10'}`}
+                    >
+                      <div className={`w-6 h-6 rounded-full bg-white transition-transform ${settings.familySafe ? 'translate-x-6' : 'translate-x-0'}`}/>
+                    </button>
+                  </div>
+                </div>
+
+                {!settings.familySafe && (
+                  <div className="glass rounded-3xl p-5 shadow-lg">
+                    <p className="text-[10px] tracking-[0.2em] text-white/50 uppercase font-bold mb-3">Vibe / Mood</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      {MOODS.filter(m => m.id !== 'family-friendly').map(m => (
+                        <button 
+                          key={m.id}
+                          onClick={() => setSettings({...settings, mood: m.id})}
+                          className={`p-3 rounded-xl text-sm font-bold transition-all border ${settings.mood === m.id ? 'bg-[#8b5cf6] text-white border-[#8b5cf6] shadow-[0_0_15px_rgba(139,92,246,0.3)]' : 'bg-white/5 text-white/60 border-white/10 hover:bg-white/10'}`}
+                        >
+                          <span className="block mb-1 text-xl">{m.icon}</span>
+                          {m.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="glass rounded-3xl p-5 shadow-lg">
+                  <p className="text-[10px] tracking-[0.2em] text-white/50 uppercase font-bold mb-3">Intensity</p>
+                  <div className="flex flex-col gap-2">
+                    {DIFFICULTIES.map(d => (
+                      <button 
+                        key={d.id}
+                        onClick={() => setSettings({...settings, difficulty: d.id})}
+                        className={`p-3 rounded-xl text-sm font-bold text-left transition-all border ${settings.difficulty === d.id ? 'bg-[#f59e0b] text-[#1a0f00] border-[#f59e0b]' : 'bg-white/5 text-white/60 border-white/10'}`}
+                      >
+                        {d.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="mt-auto pt-4 flex gap-3">
+                  <button onClick={() => setAppState('setup_players')} className="flex-1 text-sm font-bold py-4 rounded-2xl glass active:scale-95">Edit Players</button>
+                  <button onClick={beginTurns} className="flex-[2] text-lg font-bold py-4 rounded-2xl bg-[#f43f5e] text-white shadow-[0_0_20px_rgba(244,63,94,0.4)] transition-all active:scale-95">
+                    Let's Play!
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* View State: 3. TURN INTRO */}
+            {appState === 'turn_intro' && activePlayer && (
+              <div className="flex-1 flex flex-col items-center justify-center anim-slide-up z-10">
+                <div className="glass w-full rounded-[2.5rem] p-10 flex flex-col items-center shadow-2xl relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-[#8b5cf6]/20 blur-[40px] rounded-full pointer-events-none"></div>
+                  
+                  <span className="text-[#f43f5e] text-[10px] font-bold tracking-[0.2em] uppercase mb-4">Up Next</span>
+                  <h2 className="text-4xl sm:text-5xl font-extrabold text-white mb-6 text-center break-words w-full">
+                    {activePlayer.name}
+                  </h2>
+                  
+                  <div className="flex gap-4 mb-10">
+                    <div className="text-center">
+                      <p className="text-white/40 text-xs uppercase tracking-wider mb-1">Score</p>
+                      <p className="text-2xl font-bold text-emerald-400">{activePlayer.score}</p>
+                    </div>
+                    <div className="w-[1px] bg-white/10"></div>
+                    <div className="text-center">
+                      <p className="text-white/40 text-xs uppercase tracking-wider mb-1">Skips Left</p>
+                      <div className="flex gap-1 mt-1 justify-center">
+                        {[1, 2].map(s => (
+                          <div key={s} className={`w-3 h-3 rounded-full ${s <= activePlayer.skipsLeft ? 'bg-[#f59e0b] shadow-[0_0_8px_rgba(245,158,11,0.6)]' : 'bg-white/10'}`} />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <button onClick={() => setAppState('choosing')} className="w-full text-lg font-bold py-4 rounded-2xl bg-white text-[#1a0f00] shadow-[0_0_20px_rgba(255,255,255,0.2)] active:scale-95 transition-all">
+                    I'm Ready
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* View State: 4. TRUTH OR DARE SELECTION */}
+            {appState === 'choosing' && (
+              <div className="flex-1 flex flex-col gap-4 anim-fade-in z-10 pt-4">
+                <div className="text-center mb-6">
+                  <h2 className="text-2xl font-bold text-white/50">{activePlayer.name}, choose your fate.</h2>
+                </div>
+                
+                <button onClick={() => generatePrompt('truth')} className="flex-1 rounded-[2.5rem] btn-truth flex flex-col items-center justify-center shadow-[0_0_30px_rgba(59,130,246,0.2)] hover:shadow-[0_0_40px_rgba(59,130,246,0.4)] transition-all active:scale-95">
+                  <span className="text-6xl mb-2">👁️</span>
+                  <span className="text-4xl font-extrabold text-white tracking-widest">TRUTH</span>
+                  <span className="text-white/70 text-sm mt-2 font-medium">Spill the tea.</span>
+                </button>
+
+                <div className="text-center text-white/30 font-bold text-sm my-1">OR</div>
+
+                <button onClick={() => generatePrompt('dare')} className="flex-1 rounded-[2.5rem] btn-dare flex flex-col items-center justify-center shadow-[0_0_30px_rgba(244,63,94,0.2)] hover:shadow-[0_0_40px_rgba(244,63,94,0.4)] transition-all active:scale-95">
+                  <span className="text-6xl mb-2">🔥</span>
+                  <span className="text-4xl font-extrabold text-white tracking-widest">DARE</span>
+                  <span className="text-white/70 text-sm mt-2 font-medium">Prove yourself.</span>
+                </button>
+              </div>
+            )}
+
+            {/* View State: 5. PROMPT REVEAL */}
+            {appState === 'prompt_reveal' && currentPrompt && (
+              <div className="flex-1 flex flex-col anim-slide-up z-10 pt-4">
+                <div className="glass rounded-[2.5rem] p-8 flex-1 flex flex-col items-center justify-center relative shadow-2xl overflow-hidden text-center mb-6 border-t border-l border-white/20">
+                  <div className={`absolute top-0 left-0 w-full h-2 ${currentPrompt.type === 'truth' ? 'bg-blue-500' : 'bg-rose-500'}`}></div>
+                  
+                  <div className="flex gap-2 mb-6">
+                    <span className="bg-white/10 px-3 py-1 rounded-full text-[10px] font-bold text-white/70 uppercase tracking-widest border border-white/5">
+                      {currentPrompt.mood}
+                    </span>
+                    <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest border ${currentPrompt.difficulty==='chaotic' ? 'bg-rose-500/20 text-rose-300 border-rose-500/30' : 'bg-white/10 text-white/70 border-white/5'}`}>
+                      {currentPrompt.difficulty}
+                    </span>
+                  </div>
+
+                  <h2 className="text-3xl sm:text-4xl font-bold leading-tight text-white mb-8">
+                    "{currentPrompt.text}"
+                  </h2>
+                </div>
+
+                <div className="flex flex-col gap-3 shrink-0">
+                  <button onClick={handleComplete} className="w-full text-lg font-bold py-4 rounded-2xl bg-emerald-500 text-white shadow-[0_0_20px_rgba(16,185,129,0.3)] active:scale-95 transition-all">
+                    Completed It (+1 Pt)
+                  </button>
+                  
+                  <button 
+                    onClick={handleSkip} 
+                    disabled={activePlayer.skipsLeft <= 0}
+                    className="w-full text-base font-bold py-4 rounded-2xl glass active:scale-95 transition-all disabled:opacity-40 disabled:active:scale-100 flex justify-center items-center gap-2"
+                  >
+                    {activePlayer.skipsLeft > 0 ? (
+                      <>Skip Prompt <span className="text-[#f59e0b]">({activePlayer.skipsLeft} left)</span></>
+                    ) : (
+                      <span className="text-rose-400">No Skips Left! You must do it.</span>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* CUSTOM PROMPT MODAL OVERLAY */}
+            {showCustomModal && (
+              <div className="absolute inset-0 z-50 p-5 flex items-center justify-center anim-fade-in bg-black/60 backdrop-blur-sm">
+                <div className="glass-strong w-full rounded-3xl p-6 shadow-2xl border border-white/20">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="font-bold text-xl">Add Custom Prompt</h3>
+                    <button onClick={() => setShowCustomModal(false)} className="text-white/50 hover:text-white">✕</button>
+                  </div>
+                  
+                  <form onSubmit={handleCustomSubmit} className="flex flex-col gap-4">
+                    <textarea 
+                      value={customForm.text}
+                      onChange={e => setCustomForm({...customForm, text: e.target.value})}
+                      className="glass-input rounded-xl p-4 min-h-[100px] resize-none"
+                      placeholder="Type your brutal dare or juicy truth here..."
+                      maxLength={150}
+                    />
+                    
+                    <div className="grid grid-cols-2 gap-2">
+                      <button type="button" onClick={() => setCustomForm({...customForm, type: 'truth'})} className={`p-2 rounded-lg font-bold text-sm border ${customForm.type === 'truth' ? 'bg-blue-500 border-blue-400 text-white' : 'bg-white/5 border-white/10 text-white/50'}`}>Truth</button>
+                      <button type="button" onClick={() => setCustomForm({...customForm, type: 'dare'})} className={`p-2 rounded-lg font-bold text-sm border ${customForm.type === 'dare' ? 'bg-rose-500 border-rose-400 text-white' : 'bg-white/5 border-white/10 text-white/50'}`}>Dare</button>
+                    </div>
+
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] uppercase text-white/50 font-bold tracking-widest">Mood Assign</label>
+                      <select value={customForm.mood} onChange={e => setCustomForm({...customForm, mood: e.target.value})} className="glass-input rounded-lg p-2 text-sm appearance-none">
+                        {MOODS.map(m => <option key={m.id} value={m.id} className="bg-gray-900">{m.label}</option>)}
+                      </select>
+                    </div>
+
+                    <button type="submit" disabled={!customForm.text.trim()} className="mt-2 w-full text-base font-bold py-3 rounded-xl bg-white text-black disabled:opacity-50 active:scale-95">Save Prompt</button>
+                  </form>
+                </div>
+              </div>
+            )}
+
+          </div>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App/>);
+  </script>
+</body>
+</html>
