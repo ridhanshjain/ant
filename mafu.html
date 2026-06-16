@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Undercover Moderator Multiplayer</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "react": "https://esm.sh/react@18",
+      "react/jsx-runtime": "https://esm.sh/react@18/jsx-runtime"
+    }
+  }
+  </script>
+
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: #050505;
+      color: #f8f7ff;
+      min-height: 100vh;
+      overscroll-behavior-y: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .app-bg {
+      min-height: 100vh;
+      background: #050505;
+      background-image:
+        radial-gradient(circle at 15% 15%, rgba(220, 38, 38, 0.1), transparent 30%),
+        radial-gradient(circle at 85% 85%, rgba(59, 130, 246, 0.1), transparent 30%);
+      background-attachment: fixed;
+    }
+
+    .app-bg-night {
+      background-image: radial-gradient(circle at 50% 50%, rgba(30, 58, 138, 0.15), transparent 60%);
+      background-color: #020617;
+      transition: background-color 1s ease;
+    }
+    
+    .app-bg-blood {
+      background-image: radial-gradient(circle at 50% 50%, rgba(153, 27, 27, 0.2), transparent 70%);
+      background-color: #2e0505;
+      transition: background-color 1s ease;
+    }
+
+    .font-display { font-family: 'Space Grotesk', sans-serif; }
+
+    .glass {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.05);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+    }
+    
+    .glass-strong {
+      background: rgba(0,0,0,0.6);
+      border: 1px solid rgba(255,255,255,0.1);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+    }
+
+    .glass-input {
+      background: rgba(0,0,0,0.3);
+      border: 1px solid rgba(255,255,255,0.1);
+      color: white;
+      transition: all 0.2s;
+      text-transform: uppercase;
+    }
+    .glass-input:focus {
+      border-color: #ef4444;
+      box-shadow: 0 0 15px rgba(239, 68, 68, 0.2);
+      outline: none;
+    }
+
+    .scroll-none { -ms-overflow-style: none; scrollbar-width: none; }
+    .scroll-none::-webkit-scrollbar { display: none; }
+
+    @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes pulseRed { 0%, 100% { box-shadow: 0 0 15px rgba(220, 38, 38, 0.2); } 50% { box-shadow: 0 0 30px rgba(220, 38, 38, 0.5); } }
+
+    .anim-slide-up { animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; opacity: 0; }
+    .anim-fade-in { animation: fadeIn 0.3s ease-out forwards; }
+    .anim-pulse-red { animation: pulseRed 2s infinite; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel" data-type="module">
+    const { useState, useEffect, useRef } = React;
+    const { createRoot } = ReactDOM;
+
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, collection } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+    // Firebase Init
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'mafia-multiplayer';
+    const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const auth = getAuth(app);
+
+    // Helpers
+    const generateRoomCode = () => Math.random().toString(36).substring(2, 6).toUpperCase();
+    const vibrate = (pattern) => { if (navigator.vibrate) navigator.vibrate(pattern); };
+
+    const ROLES = {
+      civilian: { id: 'civilian', name: 'Civilian', team: 'village', icon: '👨‍🌾', color: 'text-emerald-400', desc: 'Find the Mafia and vote them out during the day.' },
+      mafia: { id: 'mafia', name: 'Mafia', team: 'mafia', icon: '🔪', color: 'text-red-500', desc: 'Work with other Mafia to kill a civilian every night. Blend in during the day.' },
+      doctor: { id: 'doctor', name: 'Doctor', team: 'village', icon: '🩺', color: 'text-blue-400', desc: 'Choose one person to save each night. You can save yourself.' },
+      detective: { id: 'detective', name: 'Detective', team: 'village', icon: '🕵️', color: 'text-amber-400', desc: 'Investigate one person each night to discover if they are Mafia.' },
+      guardian: { id: 'doctor', name: 'Guardian Angel', team: 'village', icon: '🛡️', color: 'text-blue-400', desc: 'Protect one player from elimination each night.' },
+      crewmate: { id: 'civilian', name: 'Crewmate', team: 'village', icon: '🧑‍🚀', color: 'text-emerald-400', desc: 'Find the Impostors and eject them.' },
+      impostor: { id: 'mafia', name: 'Impostor', team: 'mafia', icon: '🔪', color: 'text-red-500', desc: 'Eliminate crewmates without getting caught.' },
+    };
+
+    const GAME_MODES = [
+      { id: 'classic', name: 'Classic Mafia', desc: 'Just Mafia vs Civilians. Pure deception.', min: 4 },
+      { id: 'det_doc', name: 'Detective & Doctor', desc: 'Adds special roles to the village for strategic play.', min: 5 },
+      { id: 'among_us', name: 'Space Deception', desc: 'Impostors vs Crewmates. Adds a Guardian Angel.', min: 5 }
+    ];
+
+    const DISCUSSION_QUESTIONS = [
+      "Who has been the quietest so far?",
+      "Did anyone vote weirdly in the last round?",
+      "Who is trying too hard to seem innocent?",
+      "Let's go in a circle: Everyone give one reason why you are NOT the Mafia.",
+      "Does anyone have a gut feeling that they can't quite explain?",
+      "Point at the person you trust the least right now."
+    ];
+
+    const shuffleArray = (array) => {
+      let shuffled = [...array];
+      for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+      }
+      return shuffled;
+    };
+
+    function App() {
+      const [user, setUser] = useState(null);
+      const [playerName, setPlayerName] = useState(localStorage.getItem('mafia_playerName') || '');
+      const [roomCode, setRoomCode] = useState('');
+      const [inputCode, setInputCode] = useState('');
+      const [roomData, setRoomData] = useState(null);
+      const [localVote, setLocalVote] = useState(null);
+      const [localAction, setLocalAction] = useState(null);
+      const [detectiveResult, setDetectiveResult] = useState(null);
+
+      // Auth Effect
+      useEffect(() => {
+        const authenticate = async () => {
+          if (typeof __initial_auth_token !== 'undefined') {
+            await signInWithCustomToken(auth, __initial_auth_token);
+          } else {
+            await signInAnonymously(auth);
+          }
+        };
+        authenticate();
+
+        const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+          if (currentUser) setUser(currentUser);
+        });
+        return () => unsubscribe();
+      }, []);
+
+      // Room Listener Effect
+      useEffect(() => {
+        if (!user || !roomCode) return;
+        
+        const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomCode);
+        const unsubscribe = onSnapshot(roomRef, (snapshot) => {
+          if (snapshot.exists()) {
+            setRoomData(snapshot.data());
+          } else {
+            setRoomData(null);
+            setRoomCode(''); // Room closed/deleted
+          }
+        }, (err) => console.error("Firestore Listen Error:", err));
+
+        return () => unsubscribe();
+      }, [user, roomCode]);
+
+      const handleJoinRoom = async (code) => {
+        if (!user || !playerName.trim()) return;
+        localStorage.setItem('mafia_playerName', playerName);
+        
+        const upperCode = code.toUpperCase();
+        const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', upperCode);
+        const snap = await getDoc(roomRef);
+        
+        if (!snap.exists()) {
+          alert("Room not found.");
+          return;
+        }
+
+        const data = snap.data();
+        if (data.phase !== 'setup' && !data.players[user.uid]) {
+          alert("Game has already started.");
+          return;
+        }
+
+        await updateDoc(roomRef, {
+          [`players.${user.uid}`]: {
+            id: user.uid,
+            name: playerName,
+            role: data.players[user.uid]?.role || null,
+            isAlive: data.players[user.uid] ? data.players[user.uid].isAlive : true
+          }
+        });
+
+        setRoomCode(upperCode);
+        vibrate(20);
+      };
+
+      const handleCreateRoom = async () => {
+        if (!user || !playerName.trim()) return;
+        localStorage.setItem('mafia_playerName', playerName);
+
+        const newCode = generateRoomCode();
+        const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', newCode);
+        
+        await setDoc(roomRef, {
+          id: newCode,
+          hostId: user.uid,
+          phase: 'setup',
+          mode: 'classic',
+          round: 1,
+          nightLogs: [],
+          votes: {}, // userId -> targetId
+          nightActions: { killTarget: {}, saveTarget: {} }, // actorId -> targetId
+          players: {
+            [user.uid]: { id: user.uid, name: playerName, role: null, isAlive: true }
+          }
+        });
+
+        setRoomCode(newCode);
+        vibrate(20);
+      };
+
+      // --- HOST ACTIONS ---
+      const updateRoom = async (updates) => {
+        if (!roomCode) return;
+        const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomCode);
+        await updateDoc(roomRef, updates);
+      };
+
+      const hostStartGame = async () => {
+        const playerIds = Object.keys(roomData.players);
+        const count = playerIds.length;
+        const modeId = roomData.mode;
+        
+        let deck = [];
+        if (modeId === 'classic') {
+          const mCount = Math.floor(count / 4) || 1;
+          deck.push(...Array(mCount).fill('mafia'));
+          deck.push(...Array(count - mCount).fill('civilian'));
+        } else if (modeId === 'det_doc') {
+          const mCount = Math.floor((count - 1) / 3) || 1;
+          deck.push(...Array(mCount).fill('mafia'));
+          deck.push('detective');
+          deck.push('doctor');
+          deck.push(...Array(count - mCount - 2).fill('civilian'));
+        } else if (modeId === 'among_us') {
+          const mCount = Math.floor((count - 1) / 3) || 1;
+          deck.push(...Array(mCount).fill('impostor'));
+          deck.push('guardian');
+          deck.push(...Array(count - mCount - 1).fill('crewmate'));
+        }
+        
+        while(deck.length < count) deck.push(modeId === 'among_us' ? 'crewmate' : 'civilian');
+        deck = shuffleArray(deck);
+
+        const updatedPlayers = { ...roomData.players };
+        playerIds.forEach((uid, index) => {
+          updatedPlayers[uid].role = deck[index];
+          updatedPlayers[uid].isAlive = true;
+        });
+
+        await updateRoom({ players: updatedPlayers, phase: 'role_reveal', round: 1, nightLogs: [] });
+      };
+
+      const checkWinCondition = (players) => {
+        const alive = Object.values(players).filter(p => p.isAlive);
+        const mafias = alive.filter(p => ROLES[p.role].team === 'mafia');
+        const civs = alive.filter(p => ROLES[p.role].team === 'village');
+
+        if (mafias.length >= civs.length) return 'game_over_mafia';
+        if (mafias.length === 0) return 'game_over_civ';
+        return null;
+      };
+
+      const hostProcessNight = async () => {
+        const actions = roomData.nightActions;
+        const players = { ...roomData.players };
+        let logs = [];
+
+        // Tally Mafia Votes
+        let killTally = {};
+        Object.values(actions.killTarget || {}).forEach(targetId => {
+          killTally[targetId] = (killTally[targetId] || 0) + 1;
+        });
+        
+        // Find most voted kill target
+        let maxKillVotes = 0;
+        let finalKillTarget = null;
+        for (const [id, count] of Object.entries(killTally)) {
+          if (count > maxKillVotes) {
+            maxKillVotes = count;
+            finalKillTarget = id;
+          }
+        }
+
+        // Tally Doctor Votes (usually just 1 doc, but supports multiple)
+        let saveTally = {};
+        Object.values(actions.saveTarget || {}).forEach(targetId => {
+          saveTally[targetId] = (saveTally[targetId] || 0) + 1;
+        });
+        let maxSaveVotes = 0;
+        let finalSaveTarget = null;
+        for (const [id, count] of Object.entries(saveTally)) {
+          if (count > maxSaveVotes) {
+            maxSaveVotes = count;
+            finalSaveTarget = id;
+          }
+        }
+
+        if (finalKillTarget && finalKillTarget !== finalSaveTarget) {
+          players[finalKillTarget].isAlive = false;
+          logs.push(`Tragedy struck! ${players[finalKillTarget].name} was eliminated in the night.`);
+        } else if (finalKillTarget && finalKillTarget === finalSaveTarget) {
+          logs.push("It was a peaceful night. Someone was attacked, but a protector saved them!");
+        } else {
+          logs.push("It was a surprisingly peaceful night. No one died.");
+        }
+
+        const winPhase = checkWinCondition(players);
+
+        await updateRoom({
+          players,
+          nightLogs: logs,
+          phase: winPhase || 'day_start',
+          nightActions: { killTarget: {}, saveTarget: {} }
+        });
+      };
+
+      const hostProcessVotes = async () => {
+        const votes = roomData.votes || {};
+        const players = { ...roomData.players };
+        let logs = [...(roomData.nightLogs || [])];
+
+        const tally = {};
+        Object.values(votes).forEach(targetId => {
+          if (targetId !== 'skip') {
+            tally[targetId] = (tally[targetId] || 0) + 1;
+          }
+        });
+
+        if (Object.keys(tally).length === 0) {
+          logs.unshift("The village decided to skip voting today.");
+        } else {
+          let maxVotes = 0;
+          let eliminatedId = null;
+          let isTie = false;
+
+          for (const [id, count] of Object.entries(tally)) {
+            if (count > maxVotes) {
+              maxVotes = count;
+              eliminatedId = id;
+              isTie = false;
+            } else if (count === maxVotes) {
+              isTie = true;
+            }
+          }
+
+          if (isTie) {
+            logs.unshift("The vote was a tie! No one is eliminated today.");
+          } else if (eliminatedId) {
+            players[eliminatedId].isAlive = false;
+            logs.unshift(`The village has spoken. ${players[eliminatedId].name} was eliminated by vote.`);
+          }
+        }
+
+        const winPhase = checkWinCondition(players);
+
+        await updateRoom({
+          players,
+          nightLogs: logs,
+          phase: winPhase || 'night_action',
+          round: roomData.round + 1,
+          votes: {}
+        });
+      };
+
+      // --- PLAYER ACTIONS ---
+      const submitNightAction = async (targetId, actionType) => {
+        setLocalAction(targetId);
+        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomCode), {
+          [`nightActions.${actionType}.${user.uid}`]: targetId
+        });
+        vibrate(20);
+      };
+
+      const submitInvestigate = (targetId) => {
+        setLocalAction(targetId);
+        const isMafia = ROLES[roomData.players[targetId].role].team === 'mafia';
+        setDetectiveResult(isMafia ? 'Guilty (Enemy)' : 'Innocent');
+        vibrate(20);
+      };
+
+      const submitVote = async (targetId) => {
+        setLocalVote(targetId);
+        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomCode), {
+          [`votes.${user.uid}`]: targetId
+        });
+        vibrate(20);
+      };
+
+      // Reset local state when phase changes
+      useEffect(() => {
+        if (roomData?.phase === 'night_action') {
+          setLocalVote(null);
+          setLocalAction(null);
+          setDetectiveResult(null);
+        } else if (roomData?.phase === 'day_voting') {
+          setLocalVote(null);
+          setLocalAction(null);
+        }
+      }, [roomData?.phase]);
+
+      if (!user) return <div className="app-bg flex items-center justify-center text-white min-h-[100dvh]">Connecting...</div>;
+
+      // 1. LOBBY VIEW
+      if (!roomCode || !roomData) {
+        return (
+          <div className="app-bg font-display flex justify-center min-h-[100dvh] items-center p-5">
+            <div className="w-full max-w-[400px] glass rounded-3xl p-8 flex flex-col items-center shadow-2xl anim-fade-in text-center">
+              <h1 className="text-4xl font-black text-white mb-2"><span className="text-red-500">Undercover</span></h1>
+              <p className="text-xs text-white/50 tracking-widest uppercase mb-8">Multiplayer Edition</p>
+
+              <input 
+                type="text" 
+                value={playerName}
+                onChange={(e) => setPlayerName(e.target.value)}
+                placeholder="Enter Your Name"
+                className="w-full glass-input rounded-xl px-4 py-4 font-bold text-center mb-6"
+                maxLength={15}
+              />
+
+              <div className="w-full flex flex-col gap-3">
+                <button 
+                  onClick={handleCreateRoom}
+                  disabled={!playerName.trim()}
+                  className="w-full text-lg font-bold py-4 rounded-xl bg-red-600 text-white shadow-[0_0_20px_rgba(220,38,38,0.4)] disabled:opacity-50 transition-all active:scale-95"
+                >
+                  Create New Room
+                </button>
+                
+                <div className="flex gap-2 mt-4">
+                  <input 
+                    type="text" 
+                    value={inputCode}
+                    onChange={(e) => setInputCode(e.target.value.toUpperCase())}
+                    placeholder="ROOM CODE"
+                    className="flex-1 glass-input rounded-xl px-4 py-3 font-bold text-center tracking-widest"
+                    maxLength={4}
+                  />
+                  <button 
+                    onClick={() => handleJoinRoom(inputCode)}
+                    disabled={!playerName.trim() || inputCode.length !== 4}
+                    className="bg-white/10 px-5 rounded-xl font-bold text-white disabled:opacity-50 border border-white/20 active:scale-95"
+                  >
+                    Join
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      // --- GAME VIEWS ---
+      const isHost = roomData.hostId === user.uid;
+      const me = roomData.players[user.uid];
+      const alivePlayers = Object.values(roomData.players).filter(p => p.isAlive);
+      const allPlayers = Object.values(roomData.players);
+
+      const getBgClass = () => {
+        if (roomData.phase.includes('night')) return 'app-bg-night';
+        if (roomData.phase.includes('game_over_mafia')) return 'app-bg-blood';
+        return 'app-bg';
+      };
+
+      const renderPlayerList = (filterCondition, actionHandler, selectedId, disabledId = null) => (
+        <div className="flex flex-col gap-2 max-h-[40vh] overflow-y-auto scroll-none pr-1 w-full">
+          {alivePlayers.filter(filterCondition).map(p => (
+            <button 
+              key={p.id}
+              disabled={p.id === disabledId || !!selectedId}
+              onClick={() => actionHandler(p.id)}
+              className={`p-4 rounded-2xl font-bold text-left transition-all border flex justify-between items-center w-full ${
+                selectedId === p.id 
+                  ? 'bg-red-500/20 text-white border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.3)]' 
+                  : p.id === disabledId || !!selectedId
+                    ? 'bg-black/40 text-white/20 border-transparent cursor-not-allowed'
+                    : 'bg-white/5 text-white/80 border-white/10 hover:bg-white/10'
+              }`}
+            >
+              <span>{p.name}</span>
+              {selectedId === p.id && <span>🎯</span>}
+            </button>
+          ))}
+        </div>
+      );
+
+      return (
+        <div className={`${getBgClass()} font-display flex flex-col items-center min-h-[100dvh] pb-24`}>
+          <div className="w-full max-w-[500px] flex flex-col p-5 relative overflow-hidden flex-1">
+            
+            {/* Header */}
+            <header className="flex justify-between items-center mb-6 shrink-0 anim-fade-in z-10 w-full">
+              <div>
+                <h1 className="text-xl font-bold tracking-tight text-white leading-none">
+                  Room: <span className="text-red-500">{roomCode}</span>
+                </h1>
+                <p className="text-xs text-white/50">{me?.name} {me?.isAlive === false ? '(Dead)' : ''}</p>
+              </div>
+              <button onClick={() => { setRoomCode(''); setRoomData(null); }} className="text-xs text-white/40 hover:text-red-400 font-bold uppercase tracking-wider">Leave</button>
+            </header>
+
+            {/* --- PHASE: SETUP --- */}
+            {roomData.phase === 'setup' && (
+              <div className="flex-1 flex flex-col w-full anim-slide-up">
+                <div className="glass rounded-3xl p-6 mb-4 shadow-xl">
+                  <div className="flex justify-between items-center mb-4">
+                    <p className="text-[10px] tracking-[0.2em] text-white/50 uppercase font-bold">Players ({allPlayers.length})</p>
+                    {allPlayers.length < 4 && <p className="text-[10px] text-red-400 font-bold">Need {4 - allPlayers.length} more</p>}
+                  </div>
+                  <div className="flex flex-col gap-2 max-h-[30vh] overflow-y-auto scroll-none">
+                    {allPlayers.map((p) => (
+                      <div key={p.id} className="flex justify-between items-center glass px-4 py-3 rounded-xl">
+                        <span className="font-bold text-white flex items-center gap-2">
+                          {p.name} {p.id === roomData.hostId && <span className="text-yellow-500 text-xs">👑 Host</span>}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {isHost ? (
+                  <div className="glass rounded-3xl p-5 mb-4">
+                    <p className="text-[10px] tracking-[0.2em] text-white/50 uppercase font-bold mb-3">Game Mode</p>
+                    <div className="flex flex-col gap-2">
+                      {GAME_MODES.map(m => (
+                        <button 
+                          key={m.id}
+                          onClick={() => updateRoom({ mode: m.id })}
+                          className={`p-3 rounded-xl text-left transition-all border ${roomData.mode === m.id ? 'bg-red-500/20 text-white border-red-500/50' : 'bg-white/5 text-white/60 border-white/10'}`}
+                        >
+                          <div className="font-bold text-sm">{m.name}</div>
+                          <div className="text-xs opacity-70 mt-1">{m.desc}</div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="glass rounded-3xl p-5 text-center text-white/60 italic">
+                    Waiting for host to select mode and start...
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* --- PHASE: ROLE REVEAL --- */}
+            {roomData.phase === 'role_reveal' && me?.role && (
+              <div className="flex-1 flex flex-col items-center justify-center w-full anim-fade-in text-center">
+                <div className="glass-strong rounded-3xl p-8 border border-white/10 w-full relative overflow-hidden">
+                  <div className="absolute top-0 right-0 p-4 opacity-10 text-6xl">{ROLES[me.role].icon}</div>
+                  <p className="text-[10px] tracking-[0.2em] text-white/50 uppercase font-bold mb-2">Your Secret Role</p>
+                  <h1 className={`text-4xl font-black mb-4 ${ROLES[me.role].color}`}>{ROLES[me.role].name}</h1>
+                  <div className="bg-black/40 rounded-xl p-4 border border-white/5 mb-4">
+                    <p className="text-white/80 text-sm leading-relaxed">{ROLES[me.role].desc}</p>
+                  </div>
+                  {!isHost && <p className="text-xs text-white/40 italic mt-4">Waiting for host to start the night...</p>}
+                </div>
+              </div>
+            )}
+
+            {/* --- PHASE: NIGHT ACTION --- */}
+            {roomData.phase === 'night_action' && me && (
+              <div className="flex-1 flex flex-col w-full anim-slide-up pt-4">
+                <div className="mb-6 text-center">
+                  <p className="text-[10px] tracking-[0.2em] text-blue-400 uppercase font-bold mb-1">Night {roomData.round}</p>
+                  <h2 className="text-2xl font-black text-white">City is Sleeping</h2>
+                </div>
+
+                {!me.isAlive ? (
+                  <div className="text-center text-white/50 italic py-10">You are a ghost. You can only watch.</div>
+                ) : (
+                  <>
+                    {ROLES[me.role].team === 'mafia' && (
+                      <div className="flex-1 flex flex-col w-full">
+                        <p className="text-white/70 mb-4 text-sm font-bold text-center">Who do you want to eliminate?</p>
+                        {renderPlayerList(p => p.id !== me.id || roomData.mode==='among_us', id => submitNightAction(id, 'killTarget'), localAction)}
+                      </div>
+                    )}
+
+                    {(me.role === 'doctor' || me.role === 'guardian') && (
+                      <div className="flex-1 flex flex-col w-full">
+                        <p className="text-white/70 mb-4 text-sm font-bold text-center">Who do you want to protect tonight?</p>
+                        {renderPlayerList(p => true, id => submitNightAction(id, 'saveTarget'), localAction)}
+                      </div>
+                    )}
+
+                    {me.role === 'detective' && (
+                      <div className="flex-1 flex flex-col w-full">
+                        <p className="text-white/70 mb-4 text-sm font-bold text-center">Investigate someone's true identity:</p>
+                        {renderPlayerList(p => p.id !== me.id, id => submitInvestigate(id), localAction)}
+                        
+                        {detectiveResult && (
+                          <div className="mt-4 glass bg-blue-900/40 p-4 rounded-xl border border-blue-500/30 anim-fade-in text-center">
+                            <span className="font-bold text-white">Result: </span> 
+                            <span className={detectiveResult.includes('Enemy') ? 'text-red-400 font-bold' : 'text-emerald-400 font-bold'}>
+                              {detectiveResult}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {ROLES[me.role].team === 'village' && me.role !== 'doctor' && me.role !== 'detective' && me.role !== 'guardian' && (
+                      <div className="flex-1 flex flex-col items-center justify-center opacity-50 py-10">
+                        <div className="text-4xl mb-4">💤</div>
+                        <p className="text-center font-bold">You are sleeping.</p>
+                      </div>
+                    )}
+                  </>
+                )}
+                {localAction && !isHost && <p className="text-center text-xs text-white/40 mt-6">Action recorded. Waiting for sunrise...</p>}
+              </div>
+            )}
+
+            {/* --- PHASE: DAY START SUMMARY --- */}
+            {roomData.phase === 'day_start' && (
+              <div className="flex-1 flex flex-col items-center justify-center w-full anim-fade-in text-center">
+                <div className="text-5xl mb-4">🌅</div>
+                <h1 className="text-3xl font-black text-white mb-6">Morning Breaks</h1>
+                <div className="w-full glass rounded-2xl p-6 mb-8 border border-white/10 space-y-4">
+                  {(roomData.nightLogs || []).map((log, idx) => (
+                    <p key={idx} className={`font-bold text-lg leading-relaxed ${log.includes('eliminated') ? 'text-red-400' : 'text-white/90'}`}>{log}</p>
+                  ))}
+                  {(!roomData.nightLogs || roomData.nightLogs.length === 0) && <p>Nothing happened yet.</p>}
+                </div>
+                {!isHost && <p className="text-xs text-white/40 italic">Waiting for host to start discussion...</p>}
+              </div>
+            )}
+
+            {/* --- PHASE: DAY DISCUSSION --- */}
+            {roomData.phase === 'day_discussion' && (
+              <div className="flex-1 flex flex-col w-full anim-slide-up pt-2">
+                <div className="glass rounded-3xl p-6 mb-4 flex-1 flex flex-col items-center justify-center text-center relative border border-white/10 shadow-xl">
+                  <p className="text-[10px] tracking-[0.2em] text-white/50 uppercase font-bold absolute top-6">Moderator Suggestion</p>
+                  <h2 className="text-xl font-bold text-white leading-relaxed px-2 mt-6">
+                    "{DISCUSSION_QUESTIONS[roomData.round % DISCUSSION_QUESTIONS.length]}"
+                  </h2>
+                </div>
+
+                <div className="glass rounded-3xl p-5 mb-4 w-full">
+                  <div className="flex justify-between items-center mb-3">
+                    <p className="text-[10px] tracking-[0.2em] text-white/50 uppercase font-bold">Alive ({alivePlayers.length})</p>
+                    <p className="text-[10px] tracking-[0.2em] text-red-500 uppercase font-bold">Eliminated ({allPlayers.length - alivePlayers.length})</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {allPlayers.map(p => (
+                      <span key={p.id} className={`text-xs font-bold px-3 py-1.5 rounded-lg border ${p.isAlive ? 'bg-white/10 border-white/20 text-white' : 'bg-red-500/10 border-red-500/20 text-red-400/50 line-through'}`}>
+                        {p.name}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                {!isHost && <p className="text-xs text-white/40 italic text-center">Discuss until host calls a vote.</p>}
+              </div>
+            )}
+
+            {/* --- PHASE: DAY VOTING --- */}
+            {roomData.phase === 'day_voting' && me && (
+              <div className="flex-1 flex flex-col w-full anim-slide-up pt-4">
+                <div className="mb-6 text-center">
+                  <p className="text-[10px] tracking-[0.2em] text-red-400 uppercase font-bold mb-1">Voting Phase</p>
+                  <h2 className="text-2xl font-black text-white">Who is guilty?</h2>
+                </div>
+
+                {!me.isAlive ? (
+                  <div className="text-center text-white/50 italic py-10">Ghosts cannot vote.</div>
+                ) : (
+                  <div className="flex-1 flex flex-col w-full">
+                    <div className="flex flex-col gap-2 max-h-[50vh] overflow-y-auto scroll-none pr-1">
+                      <button 
+                          disabled={!!localVote}
+                          onClick={() => submitVote('skip')}
+                          className={`p-4 rounded-2xl font-bold text-center transition-all border mb-2 w-full ${
+                            localVote === 'skip' ? 'bg-white/20 text-white border-white' : !!localVote ? 'bg-black/40 text-white/20 border-transparent' : 'bg-white/5 text-white/60 border-white/10 border-dashed'
+                          }`}
+                        >
+                          Skip Vote
+                      </button>
+                      {alivePlayers.filter(p => p.id !== me.id).map(p => (
+                        <button 
+                          key={p.id}
+                          disabled={!!localVote}
+                          onClick={() => submitVote(p.id)}
+                          className={`p-4 rounded-2xl font-bold text-left transition-all border flex justify-between items-center w-full ${
+                            localVote === p.id 
+                              ? 'bg-red-500/20 text-white border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.3)]' 
+                              : !!localVote
+                                ? 'bg-black/40 text-white/20 border-transparent'
+                                : 'bg-white/5 text-white/80 border-white/10 hover:bg-white/10'
+                          }`}
+                        >
+                          <span>{p.name}</span>
+                          {localVote === p.id && <span>🗳️</span>}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {localVote && !isHost && <p className="text-center text-xs text-white/40 mt-6">Vote cast. Waiting for host to tally...</p>}
+              </div>
+            )}
+
+            {/* --- PHASE: GAME OVER --- */}
+            {(roomData.phase === 'game_over_mafia' || roomData.phase === 'game_over_civ') && (
+              <div className="flex-1 flex flex-col w-full anim-fade-in pt-6 text-center">
+                <p className="text-[12px] tracking-[0.3em] text-white/50 uppercase font-bold mb-4">Game Over</p>
+                <h1 className={`text-4xl font-black mb-6 ${roomData.phase === 'game_over_mafia' ? 'text-red-500' : 'text-emerald-500'}`}>
+                  {roomData.phase === 'game_over_mafia' ? (roomData.mode==='among_us'?'Impostors Win':'Mafia Wins') : (roomData.mode==='among_us'?'Crewmates Win':'Village Wins')}
+                </h1>
+
+                <div className="glass rounded-3xl p-6 mb-6 text-left flex-1 overflow-y-auto scroll-none w-full">
+                  <h3 className="font-bold text-white/50 uppercase text-xs tracking-widest mb-4 border-b border-white/10 pb-2">The Truth Revealed</h3>
+                  <div className="flex flex-col gap-3">
+                    {allPlayers.map(p => (
+                      <div key={p.id} className="flex justify-between items-center">
+                        <div className="flex items-center gap-2">
+                          <span className={`font-bold ${p.isAlive ? 'text-white' : 'text-white/30 line-through'}`}>{p.name}</span>
+                        </div>
+                        <span className={`text-xs font-bold px-2 py-1 rounded bg-black/40 border border-white/5 ${ROLES[p.role].color}`}>
+                          {ROLES[p.role].icon} {ROLES[p.role].name}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* --- HOST CONTROLS (Always sticky at bottom if Host) --- */}
+          {isHost && roomData.phase !== 'setup' && (
+            <div className="fixed bottom-0 left-0 w-full glass-strong border-t border-red-500/30 p-4 z-50 flex flex-col items-center shadow-[0_-10px_30px_rgba(0,0,0,0.8)]">
+              <p className="text-[10px] text-yellow-500 font-bold tracking-widest uppercase mb-2">Host Controls</p>
+              <div className="w-full max-w-[500px] flex gap-2">
+                
+                {roomData.phase === 'role_reveal' && (
+                  <button onClick={() => updateRoom({ phase: 'night_action' })} className="flex-1 bg-blue-600 text-white font-bold py-3 rounded-xl active:scale-95">
+                    Wake Up City (Start Night 1)
+                  </button>
+                )}
+
+                {roomData.phase === 'night_action' && (
+                  <button onClick={hostProcessNight} className="flex-1 bg-blue-500 text-white font-bold py-3 rounded-xl active:scale-95">
+                    Process Night Actions
+                  </button>
+                )}
+
+                {roomData.phase === 'day_start' && (
+                  <button onClick={() => updateRoom({ phase: 'day_discussion' })} className="flex-1 bg-white text-black font-bold py-3 rounded-xl active:scale-95">
+                    Start Discussion
+                  </button>
+                )}
+
+                {roomData.phase === 'day_discussion' && (
+                  <button onClick={() => updateRoom({ phase: 'day_voting' })} className="flex-1 bg-red-600 text-white font-bold py-3 rounded-xl active:scale-95">
+                    Call Vote
+                  </button>
+                )}
+
+                {roomData.phase === 'day_voting' && (
+                  <button onClick={hostProcessVotes} className="flex-1 bg-red-800 text-white font-bold py-3 rounded-xl border border-red-500 active:scale-95">
+                    Tally Votes ({Object.keys(roomData.votes || {}).length} in)
+                  </button>
+                )}
+
+                {(roomData.phase === 'game_over_mafia' || roomData.phase === 'game_over_civ') && (
+                  <button onClick={() => updateRoom({ phase: 'setup' })} className="flex-1 bg-white/20 text-white font-bold py-3 rounded-xl active:scale-95">
+                    Back to Lobby
+                  </button>
+                )}
+
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    const root = createRoot(document.getElementById('root'));
+    root.render(<App/>);
+  </script>
+</body>
+</html>
