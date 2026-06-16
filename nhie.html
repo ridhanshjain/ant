@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Never Have I Ever Engine</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "react": "https://esm.sh/react@18",
+      "react/jsx-runtime": "https://esm.sh/react@18/jsx-runtime"
+    }
+  }
+  </script>
+
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: #07051a;
+      color: #f8f7ff;
+      min-height: 100vh;
+      overscroll-behavior-y: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .app-bg {
+      min-height: 100vh;
+      background: #07051a;
+      background-image:
+        radial-gradient(circle at 85% 15%, rgba(236, 72, 153, 0.15), transparent 25%),
+        radial-gradient(circle at 15% 85%, rgba(56, 189, 248, 0.15), transparent 25%);
+      background-attachment: fixed;
+    }
+
+    .font-display { font-family: 'Space Grotesk', sans-serif; }
+
+    /* Glassmorphism */
+    .glass {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+    }
+    
+    .glass-strong {
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.15);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+    }
+
+    .glass-input {
+      background: rgba(0,0,0,0.2);
+      border: 1px solid rgba(255,255,255,0.1);
+      color: white;
+      transition: all 0.2s;
+    }
+    .glass-input:focus {
+      border-color: #ec4899;
+      box-shadow: 0 0 15px rgba(236, 72, 153, 0.3);
+      outline: none;
+    }
+
+    .glass-hover { transition: all 0.2s; }
+    .glass-hover:active { transform: scale(0.96); }
+
+    .scroll-none { -ms-overflow-style: none; scrollbar-width: none; }
+    .scroll-none::-webkit-scrollbar { display: none; }
+
+    /* Animations */
+    @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+    .anim-slide-up { animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; opacity: 0; }
+    .anim-fade-in { animation: fadeIn 0.3s ease-out forwards; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel" data-type="module">
+    const { useState, useEffect, useRef } = React;
+
+    // --- MASSIVE OFFLINE PROMPT DATABASE ---
+    const DB = [
+      // Clean
+      { id: 'c1', category: 'clean', intensity: 'chill', safe: true, text: "Never have I ever pretended to be texting to avoid someone." },
+      { id: 'c2', category: 'clean', intensity: 'chill', safe: true, text: "Never have I ever accidentally liked an old photo while stalking." },
+      { id: 'c3', category: 'clean', intensity: 'fun', safe: true, text: "Never have I ever dropped my phone on my face while lying down." },
+      { id: 'c4', category: 'clean', intensity: 'fun', safe: true, text: "Never have I ever worn my clothes inside out for a whole day." },
+      { id: 'c5', category: 'clean', intensity: 'chaotic', safe: true, text: "Never have I ever eaten food that fell on the floor past the 5-second rule." },
+      
+      // Spicy (Safe & Playful)
+      { id: 's1', category: 'spicy', intensity: 'chill', safe: false, text: "Never have I ever practiced flirting in the mirror." },
+      { id: 's2', category: 'spicy', intensity: 'fun', safe: false, text: "Never have I ever sent a risky text and immediately put my phone on airplane mode." },
+      { id: 's3', category: 'spicy', intensity: 'chaotic', safe: false, text: "Never have I ever had a crush on a friend's sibling." },
+      { id: 's4', category: 'spicy', intensity: 'fun', safe: false, text: "Never have I ever used a cheesy pickup line unironically." },
+      { id: 's5', category: 'spicy', intensity: 'chaotic', safe: false, text: "Never have I ever kissed someone and immediately regretted it." },
+
+      // College Life
+      { id: 'cl1', category: 'college', intensity: 'chill', safe: true, text: "Never have I ever fallen asleep in a lecture." },
+      { id: 'cl2', category: 'college', intensity: 'fun', safe: true, text: "Never have I ever pulled an all-nighter for an exam and still failed." },
+      { id: 'cl3', category: 'college', intensity: 'chaotic', safe: true, text: "Never have I ever submitted an assignment at 11:59 PM." },
+      { id: 'cl4', category: 'college', intensity: 'fun', safe: true, text: "Never have I ever lied to my parents about my grades." },
+
+      // Friendship
+      { id: 'f1', category: 'friendship', intensity: 'chill', safe: true, text: "Never have I ever lied to get out of a hangout." },
+      { id: 'f2', category: 'friendship', intensity: 'fun', safe: true, text: "Never have I ever third-wheeled a date so hard it was awkward." },
+      { id: 'f3', category: 'friendship', intensity: 'chaotic', safe: true, text: "Never have I ever kept a secret from my best friend for over a year." },
+      { id: 'f4', category: 'friendship', intensity: 'fun', safe: true, text: "Never have I ever covered for a friend's lie." },
+
+      // Travel
+      { id: 't1', category: 'travel', intensity: 'chill', safe: true, text: "Never have I ever stolen hotel toiletries." },
+      { id: 't2', category: 'travel', intensity: 'fun', safe: true, text: "Never have I ever gotten completely lost in a foreign city." },
+      { id: 't3', category: 'travel', intensity: 'chaotic', safe: true, text: "Never have I ever missed a flight or a train because I overslept." },
+      { id: 't4', category: 'travel', intensity: 'fun', safe: true, text: "Never have I ever faked an accent while on vacation." },
+
+      // Relationships
+      { id: 'r1', category: 'relationships', intensity: 'chill', safe: true, text: "Never have I ever kept a gift from an ex." },
+      { id: 'r2', category: 'relationships', intensity: 'fun', safe: true, text: "Never have I ever stalked my current partner's ex online." },
+      { id: 'r3', category: 'relationships', intensity: 'chaotic', safe: false, text: "Never have I ever ghosted someone after a great first date." },
+      { id: 'r4', category: 'relationships', intensity: 'fun', safe: true, text: "Never have I ever forgotten an anniversary." },
+
+      // Dark Secrets (Safe)
+      { id: 'ds1', category: 'dark', intensity: 'chill', safe: false, text: "Never have I ever snooped through someone else's phone." },
+      { id: 'ds2', category: 'dark', intensity: 'fun', safe: false, text: "Never have I ever broken something and blamed it on someone else." },
+      { id: 'ds3', category: 'dark', intensity: 'chaotic', safe: false, text: "Never have I ever created a fake social media account to spy." },
+      { id: 'ds4', category: 'dark', intensity: 'fun', safe: true, text: "Never have I ever eavesdropped on a private conversation intentionally." },
+
+      // ... Generating bulk for scale demonstration ...
+      ...Array.from({length: 30}).map((_, i) => ({ id: `g_c_${i}`, category: 'clean', intensity: 'chill', safe: true, text: `Never have I ever forgotten what I was saying mid-sentence. (#${i})` })),
+      ...Array.from({length: 30}).map((_, i) => ({ id: `g_s_${i}`, category: 'spicy', intensity: 'fun', safe: false, text: `Never have I ever sent a risky emoji to the wrong person. (#${i})` })),
+      ...Array.from({length: 30}).map((_, i) => ({ id: `g_f_${i}`, category: 'friendship', intensity: 'chaotic', safe: true, text: `Never have I ever muted a group chat forever. (#${i})` })),
+      ...Array.from({length: 30}).map((_, i) => ({ id: `g_t_${i}`, category: 'travel', intensity: 'fun', safe: true, text: `Never have I ever packed my bags 10 minutes before leaving. (#${i})` }))
+    ];
+
+    const CATEGORIES = [
+      { id: 'clean', label: 'Clean / Random', icon: '🧼' },
+      { id: 'spicy', label: 'Spicy (Playful)', icon: '🌶️' },
+      { id: 'college', label: 'College Life', icon: '🎓' },
+      { id: 'friendship', label: 'Friendship', icon: '👯' },
+      { id: 'travel', label: 'Travel', icon: '✈️' },
+      { id: 'relationships', label: 'Relationships', icon: '❤️' },
+      { id: 'dark', label: 'Dark Secrets', icon: '🕵️' }
+    ];
+
+    const INTENSITIES = [
+      { id: 'chill', label: 'Chill (Easy)' },
+      { id: 'fun', label: 'Fun (Medium)' },
+      { id: 'chaotic', label: 'Chaotic (Wild)' },
+      { id: 'mixed', label: 'Mixed (Surprise Me)' }
+    ];
+
+    function useStickyState(defaultValue, key) {
+      const [value, setValue] = useState(() => {
+        const stickyValue = window.localStorage.getItem(key);
+        return stickyValue !== null ? JSON.parse(stickyValue) : defaultValue;
+      });
+      useEffect(() => {
+        window.localStorage.setItem(key, JSON.stringify(value));
+      }, [key, value]);
+      return [value, setValue];
+    }
+
+    function App() {
+      // Local Storage
+      const [players, setPlayers] = useStickyState([], 'nhie_players');
+      const [settings, setSettings] = useStickyState({ 
+        categories: ['clean', 'friendship'], 
+        intensity: 'mixed', 
+        safeMode: false,
+        maxRounds: 20
+      }, 'nhie_settings');
+      const [usedPrompts, setUsedPrompts] = useStickyState([], 'nhie_used');
+      const [favorites, setFavorites] = useStickyState([], 'nhie_favs');
+      const [customPrompts, setCustomPrompts] = useStickyState([], 'nhie_custom');
+      
+      // Runtime States
+      const [appState, setAppState] = useState(players.length > 0 ? 'setup_settings' : 'setup_players');
+      const [currentPrompt, setCurrentPrompt] = useState(null);
+      const [round, setRound] = useState(1);
+      const [guiltySelections, setGuiltySelections] = useState([]); // Array of player IDs guilty this round
+      
+      const [newPlayerName, setNewPlayerName] = useState('');
+      const [showCustomModal, setShowCustomModal] = useState(false);
+      const [customForm, setCustomForm] = useState({ text: '', category: 'clean', intensity: 'fun' });
+
+      const vibrate = (pattern) => { if (navigator.vibrate) navigator.vibrate(pattern); };
+
+      // --- PLAYER MANAGEMENT ---
+      const addPlayer = (e) => {
+        e.preventDefault();
+        if (!newPlayerName.trim()) return;
+        setPlayers([...players, { 
+          id: Date.now(), 
+          name: newPlayerName.trim(), 
+          stats: { totalGuilty: 0, categories: {} } 
+        }]);
+        setNewPlayerName('');
+        vibrate(20);
+      };
+
+      const removePlayer = (id) => {
+        setPlayers(players.filter(p => p.id !== id));
+        vibrate([30, 30]);
+      };
+
+      // --- SETTINGS MANAGEMENT ---
+      const toggleCategory = (catId) => {
+        setSettings(prev => {
+          const cats = prev.categories.includes(catId) 
+            ? prev.categories.filter(c => c !== catId)
+            : [...prev.categories, catId];
+          return { ...prev, categories: cats.length > 0 ? cats : ['clean'] }; // Prevent empty
+        });
+        vibrate(15);
+      };
+
+      // --- GAME LOOP ---
+      const startGame = () => {
+        if (players.length < 2) return;
+        // Reset stats
+        const resetPlayers = players.map(p => ({ ...p, stats: { totalGuilty: 0, categories: {} } }));
+        setPlayers(resetPlayers);
+        setRound(1);
+        setUsedPrompts([]); // Optionally clear used prompts on new game, or keep for session persistence
+        generatePrompt();
+        setAppState('gameplay');
+        vibrate([30, 50, 30]);
+      };
+
+      const generatePrompt = (isSkip = false) => {
+        vibrate(40);
+        setGuiltySelections([]); // Reset guilty votes for the new card
+        
+        let pool = [...DB, ...customPrompts];
+
+        // 1. Safe Mode Enforcement
+        if (settings.safeMode) {
+          pool = pool.filter(p => p.safe === true && p.category !== 'spicy' && p.category !== 'dark');
+        }
+
+        // 2. Category Filter
+        pool = pool.filter(p => settings.categories.includes(p.category));
+
+        // 3. Intensity Filter
+        if (settings.intensity !== 'mixed') {
+          // If strict intensity results in empty pool, fallback to mixed gracefully
+          const strictPool = pool.filter(p => p.intensity === settings.intensity);
+          if (strictPool.length > 0) pool = strictPool;
+        }
+
+        // 4. Unused Filter (No-Repeat Mode)
+        let available = pool.filter(p => !usedPrompts.includes(p.id));
+
+        // Edge Case: Pool Exhausted
+        if (available.length === 0) {
+          if (pool.length === 0) {
+            alert("No prompts match these exact filters. Switching to global safe prompts.");
+            available = DB.filter(p => p.safe);
+          } else {
+            setUsedPrompts([]); // Reset pool
+            available = pool;
+          }
+        }
+
+        const selected = available[Math.floor(Math.random() * available.length)];
+        setCurrentPrompt(selected);
+        
+        // Only mark used if we actually generated it (don't mark on skip)
+        if (!isSkip) {
+            setUsedPrompts(prev => [...prev, selected.id]);
+        }
+      };
+
+      const nextRound = () => {
+        // Apply scores
+        const updatedPlayers = [...players];
+        guiltySelections.forEach(pId => {
+          const player = updatedPlayers.find(p => p.id === pId);
+          if (player) {
+            player.stats.totalGuilty += 1;
+            player.stats.categories[currentPrompt.category] = (player.stats.categories[currentPrompt.category] || 0) + 1;
+          }
+        });
+        setPlayers(updatedPlayers);
+
+        // Check game over
+        if (round >= settings.maxRounds) {
+          setAppState('game_over');
+          vibrate([100, 50, 100]);
+        } else {
+          setRound(r => r + 1);
+          generatePrompt();
+        }
+      };
+
+      const handleSkip = () => {
+        generatePrompt(true); // pass true to indicate it's a skip
+      };
+
+      const toggleFavorite = () => {
+        if (!currentPrompt) return;
+        setFavorites(prev => 
+          prev.includes(currentPrompt.id) 
+            ? prev.filter(id => id !== currentPrompt.id) 
+            : [...prev, currentPrompt.id]
+        );
+        vibrate(20);
+      };
+
+      const toggleGuilty = (id) => {
+        setGuiltySelections(prev => 
+          prev.includes(id) ? prev.filter(pid => pid !== id) : [...prev, id]
+        );
+        vibrate(10);
+      };
+
+      const saveCustomPrompt = (e) => {
+        e.preventDefault();
+        if(!customForm.text) return;
+        const newP = { ...customForm, id: `cust_${Date.now()}`, safe: settings.safeMode ? true : false };
+        setCustomPrompts(prev => [...prev, newP]);
+        setCustomForm({ text: '', category: 'clean', intensity: 'fun' });
+        setShowCustomModal(false);
+      };
+
+      const calculateAwards = () => {
+        if (!players || players.length === 0) return [];
+        
+        const awards = [];
+        
+        // Cleanest: Lowest total guilty
+        const cleanest = [...players].sort((a,b) => a.stats.totalGuilty - b.stats.totalGuilty)[0];
+        if (cleanest) awards.push({ title: "😇 The Saint", desc: "Cleanest Player", player: cleanest.name, stat: `${cleanest.stats.totalGuilty} flags` });
+
+        // Main Character: Highest total guilty
+        const chaotic = [...players].sort((a,b) => b.stats.totalGuilty - a.stats.totalGuilty)[0];
+        if (chaotic && chaotic.stats.totalGuilty > 0) awards.push({ title: "🎬 Main Character", desc: "Has done literally everything", player: chaotic.name, stat: `${chaotic.stats.totalGuilty} flags` });
+
+        // Travel Bug
+        const traveler = [...players].sort((a,b) => (b.stats.categories['travel'] || 0) - (a.stats.categories['travel'] || 0))[0];
+        if (traveler && traveler.stats.categories['travel'] > 0) awards.push({ title: "✈️ Wanderlust", desc: "Most travel confessions", player: traveler.name, stat: `${traveler.stats.categories['travel']} flags` });
+
+        // Suspicious
+        const sus = [...players].sort((a,b) => ((b.stats.categories['dark'] || 0) + (b.stats.categories['spicy'] || 0)) - ((a.stats.categories['dark'] || 0) + (a.stats.categories['spicy'] || 0)))[0];
+        if (sus && ((sus.stats.categories['dark'] || 0) + (sus.stats.categories['spicy'] || 0)) > 0) {
+            awards.push({ title: "😈 Most Suspicious", desc: "The darkest secrets", player: sus.name, stat: `${(sus.stats.categories['dark'] || 0) + (sus.stats.categories['spicy'] || 0)} flags` });
+        }
+
+        return awards;
+      };
+
+      return (
+        <div className="app-bg flex justify-center font-display text-white">
+          <div className="w-full max-w-[540px] min-h-[100dvh] flex flex-col p-5 relative overflow-hidden">
+            
+            {/* --- HEADER --- */}
+            {appState !== 'setup_players' && (
+              <header className="flex justify-between items-center mb-6 flex-shrink-0 anim-fade-in z-10">
+                <div>
+                  <h1 className="text-xl font-bold tracking-tight text-white leading-none">NHIE <span className="text-[#ec4899]">Engine</span></h1>
+                  {appState === 'gameplay' && <p className="text-[#38bdf8] text-[10px] font-bold tracking-[0.2em] uppercase mt-1">Round {round} / {settings.maxRounds}</p>}
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => setShowCustomModal(true)} className="glass px-3 py-1.5 rounded-full text-xs font-bold text-white/80 active:scale-95 transition-all">
+                    + Add
+                  </button>
+                  {appState === 'gameplay' && (
+                    <button onClick={() => setAppState('setup_settings')} className="glass px-3 py-1.5 rounded-full text-xs font-bold text-white/80 active:scale-95 transition-all">
+                      ⚙️
+                    </button>
+                  )}
+                </div>
+              </header>
+            )}
+
+            {/* --- STATE 1: PLAYER SETUP --- */}
+            {appState === 'setup_players' && (
+              <div className="flex-1 flex flex-col pt-10 anim-fade-in z-10">
+                <div className="text-center mb-10">
+                  <h1 className="text-5xl font-extrabold tracking-tight text-white mb-2">NHIE</h1>
+                  <p className="text-[#ec4899] text-xs font-bold tracking-[0.2em] uppercase">Never Have I Ever</p>
+                </div>
+
+                <div className="glass rounded-3xl p-6 mb-6 shadow-xl">
+                  <p className="text-[10px] tracking-[0.2em] text-white/50 uppercase font-bold mb-4">Add Players (Min 2)</p>
+                  
+                  <form onSubmit={addPlayer} className="flex gap-2 mb-6">
+                    <input 
+                      type="text" 
+                      value={newPlayerName}
+                      onChange={(e) => setNewPlayerName(e.target.value)}
+                      placeholder="Enter name..."
+                      className="flex-1 glass-input rounded-xl px-4 py-3 font-semibold focus:outline-none"
+                      maxLength={15}
+                    />
+                    <button type="submit" disabled={!newPlayerName.trim()} className="bg-white/10 px-5 rounded-xl font-bold text-[#ec4899] disabled:opacity-50">
+                      Add
+                    </button>
+                  </form>
+
+                  <div className="flex flex-col gap-2 max-h-[40vh] overflow-y-auto scroll-none">
+                    {players.map((t, i) => (
+                      <div key={t.id} className="flex justify-between items-center glass px-4 py-3 rounded-xl anim-slide-up" style={{animationDelay: `${i*0.05}s`}}>
+                        <span className="font-bold text-white">{t.name}</span>
+                        <button onClick={() => removePlayer(t.id)} className="text-white/30 hover:text-rose-400 text-lg transition-colors">×</button>
+                      </div>
+                    ))}
+                    {players.length === 0 && <p className="text-white/30 text-sm text-center py-4 italic">Bring your friends.</p>}
+                  </div>
+                </div>
+
+                <div className="mt-auto pt-4">
+                  <button onClick={() => setAppState('setup_settings')} disabled={players.length < 2} className="w-full text-lg font-bold py-4 rounded-2xl bg-[#ec4899] text-white shadow-[0_0_20px_rgba(236,72,153,0.4)] disabled:opacity-50 disabled:shadow-none transition-all active:scale-95">
+                    Configure Game →
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* --- STATE 2: SETTINGS --- */}
+            {appState === 'setup_settings' && (
+              <div className="flex-1 flex flex-col gap-5 anim-fade-in z-10 pt-2">
+                <div className="glass rounded-3xl p-5 shadow-lg border-l-4 border-l-emerald-400">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <h3 className="font-bold text-white text-lg">Safe Mode</h3>
+                      <p className="text-xs text-white/50 mt-1 max-w-[200px]">Strictly clean. Removes spicy and dark prompts.</p>
+                    </div>
+                    <button 
+                      onClick={() => setSettings({...settings, safeMode: !settings.safeMode})}
+                      className={`w-14 h-8 rounded-full p-1 transition-colors ${settings.safeMode ? 'bg-emerald-500' : 'bg-white/10'}`}
+                    >
+                      <div className={`w-6 h-6 rounded-full bg-white transition-transform ${settings.safeMode ? 'translate-x-6' : 'translate-x-0'}`}/>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="glass rounded-3xl p-5 shadow-lg">
+                  <p className="text-[10px] tracking-[0.2em] text-white/50 uppercase font-bold mb-3">Mix Categories</p>
+                  <div className="flex flex-wrap gap-2">
+                    {CATEGORIES.map(c => {
+                      if (settings.safeMode && (c.id === 'spicy' || c.id === 'dark')) return null;
+                      const isActive = settings.categories.includes(c.id);
+                      return (
+                        <button 
+                          key={c.id}
+                          onClick={() => toggleCategory(c.id)}
+                          className={`px-3 py-2 rounded-xl text-sm font-bold transition-all border ${isActive ? 'bg-[#38bdf8] text-[#07051a] border-[#38bdf8]' : 'bg-white/5 text-white/60 border-white/10'}`}
+                        >
+                          {c.icon} {c.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                <div className="glass rounded-3xl p-5 shadow-lg">
+                  <p className="text-[10px] tracking-[0.2em] text-white/50 uppercase font-bold mb-3">Intensity & Rounds</p>
+                  <div className="grid grid-cols-2 gap-2 mb-4">
+                    {INTENSITIES.map(int => (
+                      <button 
+                        key={int.id}
+                        onClick={() => setSettings({...settings, intensity: int.id})}
+                        className={`p-2 rounded-xl text-xs font-bold text-center transition-all border ${settings.intensity === int.id ? 'bg-[#ec4899] text-white border-[#ec4899]' : 'bg-white/5 text-white/60 border-white/10'}`}
+                      >
+                        {int.label}
+                      </button>
+                    ))}
+                  </div>
+                  
+                  <div className="flex justify-between items-center bg-black/20 p-3 rounded-xl border border-white/5">
+                     <span className="text-sm font-bold text-white/80">Total Rounds</span>
+                     <select 
+                        value={settings.maxRounds} 
+                        onChange={e => setSettings({...settings, maxRounds: Number(e.target.value)})}
+                        className="bg-transparent text-[#38bdf8] font-bold outline-none text-right appearance-none"
+                     >
+                       <option value={10}>10</option>
+                       <option value={20}>20</option>
+                       <option value={30}>30</option>
+                       <option value={50}>50</option>
+                     </select>
+                  </div>
+                </div>
+
+                <div className="mt-auto pt-4 flex gap-3 flex-shrink-0">
+                  <button onClick={() => setAppState('setup_players')} className="flex-1 text-sm font-bold py-4 rounded-2xl glass active:scale-95">Players</button>
+                  <button onClick={startGame} className="flex-[2] text-lg font-bold py-4 rounded-2xl bg-[#ec4899] text-white shadow-[0_0_20px_rgba(236,72,153,0.4)] transition-all active:scale-95">
+                    Start Confessing
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* --- STATE 3: GAMEPLAY (PROMPT & TRACKING) --- */}
+            {appState === 'gameplay' && currentPrompt && (
+              <div className="flex-1 flex flex-col anim-slide-up z-10 pt-2">
+                
+                {/* PROMPT CARD */}
+                <div className="glass rounded-[2.5rem] p-8 flex flex-col justify-center relative shadow-2xl overflow-hidden text-center mb-4 min-h-[220px]">
+                  <div className="absolute top-0 right-0 p-4">
+                    <button onClick={toggleFavorite} className="text-2xl drop-shadow-md transition-transform active:scale-50">
+                      {favorites.includes(currentPrompt.id) ? '💖' : '🤍'}
+                    </button>
+                  </div>
+                  
+                  <div className="flex justify-center gap-2 mb-4 mt-2">
+                    <span className="bg-white/10 px-3 py-1 rounded-full text-[10px] font-bold text-white/70 uppercase tracking-widest border border-white/5">
+                      {CATEGORIES.find(c => c.id === currentPrompt.category)?.label || currentPrompt.category}
+                    </span>
+                  </div>
+
+                  <h2 className="text-2xl sm:text-3xl font-extrabold leading-snug text-white drop-shadow-lg">
+                    "{currentPrompt.text}"
+                  </h2>
+                </div>
+
+                {/* TRACKING SECTION */}
+                <div className="glass rounded-3xl p-5 flex-1 flex flex-col mb-4">
+                  <p className="text-[10px] tracking-[0.2em] text-[#38bdf8] uppercase font-bold mb-3 text-center">Tap who is guilty ⬇️</p>
+                  
+                  <div className="grid grid-cols-2 gap-3 overflow-y-auto scroll-none content-start">
+                    {players.map(p => {
+                      const isGuilty = guiltySelections.includes(p.id);
+                      return (
+                        <button 
+                          key={p.id}
+                          onClick={() => toggleGuilty(p.id)}
+                          className={`p-3 rounded-2xl font-bold text-sm transition-all border flex justify-between items-center ${
+                            isGuilty 
+                              ? 'bg-[#ec4899] text-white border-[#ec4899] shadow-[0_0_15px_rgba(236,72,153,0.4)] scale-[1.02]' 
+                              : 'bg-black/20 text-white/60 border-white/5 hover:bg-white/5'
+                          }`}
+                        >
+                          <span className="truncate pr-2">{p.name}</span>
+                          <span className="text-lg leading-none">{isGuilty ? '🥂' : '🙅'}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* ACTION BAR */}
+                <div className="flex flex-col gap-3 shrink-0">
+                  <button onClick={nextRound} className="w-full text-lg font-bold py-4 rounded-2xl bg-[#38bdf8] text-[#07051a] shadow-[0_0_20px_rgba(56,189,248,0.3)] active:scale-95 transition-all">
+                    Next Prompt →
+                  </button>
+                  <button onClick={handleSkip} className="w-full text-sm font-bold py-3 rounded-2xl glass active:scale-95 transition-all text-white/50 hover:text-white flex justify-center items-center gap-2">
+                    Too Personal? Skip ⏭️
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* --- STATE 4: AWARDS (GAME OVER) --- */}
+            {appState === 'game_over' && (
+              <div className="flex-1 flex flex-col anim-fade-in z-10 pt-4">
+                <div className="text-center mb-6">
+                  <h1 className="text-4xl font-extrabold tracking-tight text-white mb-2">The Expose</h1>
+                  <p className="text-[#38bdf8] text-xs font-bold tracking-[0.2em] uppercase">Game Finished</p>
+                </div>
+
+                <div className="flex-1 flex flex-col gap-4 overflow-y-auto scroll-none pb-4">
+                  {calculateAwards().length > 0 ? calculateAwards().map((award, i) => (
+                    <div key={i} className="glass rounded-3xl p-5 relative overflow-hidden anim-slide-up" style={{animationDelay: `${i*0.1}s`}}>
+                      <div className="absolute -right-4 -top-4 text-6xl opacity-10">{award.title.split(' ')[0]}</div>
+                      <p className="text-[#ec4899] text-[10px] font-bold tracking-[0.2em] uppercase mb-1">{award.desc}</p>
+                      <h3 className="text-2xl font-bold text-white mb-2">{award.title}</h3>
+                      <div className="flex justify-between items-end">
+                        <span className="text-xl font-extrabold text-[#38bdf8]">{award.player}</span>
+                        <span className="text-white/40 text-xs font-bold">{award.stat}</span>
+                      </div>
+                    </div>
+                  )) : (
+                    <div className="glass rounded-3xl p-8 text-center text-white/50 italic">
+                      No one confessed to anything. Y'all are boring.
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-auto pt-4 shrink-0">
+                  <button onClick={() => setAppState('setup_settings')} className="w-full text-lg font-bold py-4 rounded-2xl bg-[#ec4899] text-white shadow-[0_0_20px_rgba(236,72,153,0.4)] transition-all active:scale-95">
+                    Play Again
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* --- MODAL: CUSTOM PROMPT --- */}
+            {showCustomModal && (
+              <div className="absolute inset-0 z-50 p-5 flex items-center justify-center anim-fade-in bg-[#07051a]/80 backdrop-blur-md">
+                <div className="glass-strong w-full rounded-3xl p-6 shadow-2xl border border-white/20">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="font-bold text-xl">Add Custom</h3>
+                    <button onClick={() => setShowCustomModal(false)} className="text-white/50 hover:text-white">✕</button>
+                  </div>
+                  
+                  <form onSubmit={saveCustomPrompt} className="flex flex-col gap-4">
+                    <div className="relative">
+                      <span className="absolute top-4 left-4 text-white/40 font-bold">Never have I ever...</span>
+                      <textarea 
+                        value={customForm.text}
+                        onChange={e => setCustomForm({...customForm, text: e.target.value})}
+                        className="glass-input rounded-xl p-4 pt-10 min-h-[120px] resize-none w-full font-medium leading-relaxed"
+                        placeholder="...eaten a whole pizza alone."
+                        maxLength={150}
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] uppercase text-white/50 font-bold tracking-widest">Category</label>
+                        <select value={customForm.category} onChange={e => setCustomForm({...customForm, category: e.target.value})} className="glass-input rounded-lg p-2 text-sm appearance-none outline-none">
+                          {CATEGORIES.map(c => <option key={c.id} value={c.id} className="bg-gray-900">{c.label}</option>)}
+                        </select>
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] uppercase text-white/50 font-bold tracking-widest">Intensity</label>
+                        <select value={customForm.intensity} onChange={e => setCustomForm({...customForm, intensity: e.target.value})} className="glass-input rounded-lg p-2 text-sm appearance-none outline-none">
+                          {INTENSITIES.filter(i => i.id !== 'mixed').map(i => <option key={i.id} value={i.id} className="bg-gray-900">{i.label}</option>)}
+                        </select>
+                      </div>
+                    </div>
+
+                    <button type="submit" disabled={!customForm.text.trim()} className="mt-4 w-full text-base font-bold py-3 rounded-xl bg-[#38bdf8] text-[#07051a] disabled:opacity-50 active:scale-95 transition-transform">
+                      Save Prompt
+                    </button>
+                  </form>
+                </div>
+              </div>
+            )}
+
+          </div>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App/>);
+  </script>
+</body>
+</html>
